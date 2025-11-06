@@ -1,0 +1,76 @@
+const express = require("express");
+const jwt = require("jsonwebtoken");
+const bodyParser = require("body-parser");
+const cors = require("cors");
+
+const app = express();
+app.use(cors());
+app.use(bodyParser.json());
+
+const SECRET_KEY = "mysecret123";
+
+// Sample user database (Hardcoded for demonstration)
+const users = [
+  { username: "adminUser", password: "12345", role: "admin" },
+  { username: "modUser", password: "12345", role: "moderator" },
+  { username: "normalUser", password: "12345", role: "user" }
+];
+
+// Login Route
+app.post("/login", (req, res) => {
+  const { username, password } = req.body;
+
+  const user = users.find(
+    (u) => u.username === username && u.password === password
+  );
+
+  if (!user) return res.status(401).json({ message: "Invalid Credentials" });
+
+  // Generate token with role
+  const token = jwt.sign(
+    { username: user.username, role: user.role },
+    SECRET_KEY,
+    { expiresIn: "1h" }
+  );
+
+  res.json({ message: "Login Successful", token });
+});
+
+// Middleware: Verify JWT Token
+function verifyToken(req, res, next) {
+  const authHeader = req.headers["authorization"];
+  if (!authHeader) return res.status(403).json({ message: "Token required" });
+
+  const token = authHeader.split(" ")[1];
+
+  jwt.verify(token, SECRET_KEY, (err, decoded) => {
+    if (err) return res.status(403).json({ message: "Invalid or Expired Token" });
+    req.user = decoded; // Store user details from token
+    next();
+  });
+}
+
+// Middleware: Authorize by role
+function authorizeRoles(...allowedRoles) {
+  return (req, res, next) => {
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ message: "Access Denied (Insufficient Role)" });
+    }
+    next();
+  };
+}
+
+// Protected Routes
+app.get("/user/profile", verifyToken, (req, res) => {
+  res.json({ message: "Welcome User Profile", user: req.user });
+});
+
+app.get("/moderator/panel", verifyToken, authorizeRoles("moderator", "admin"), (req, res) => {
+  res.json({ message: "Moderator Access Granted", user: req.user });
+});
+
+app.get("/admin/dashboard", verifyToken, authorizeRoles("admin"), (req, res) => {
+  res.json({ message: "Admin Dashboard Access Granted", user: req.user });
+});
+
+app.listen(5000, () => console.log("Server running on http://localhost:5000"));
